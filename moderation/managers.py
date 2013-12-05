@@ -18,37 +18,14 @@ class ModerationObjectsManager(Manager):
             {'use_for_related_fields': True})
 
     def filter_moderated_objects(self, query_set):
-        from moderation.models import MODERATION_STATUS_PENDING,\
-            MODERATION_STATUS_REJECTED
-
-        exclude_pks = []
-
         from models import ModeratedObject
 
-        mobjs_set = ModeratedObject.objects.filter(
-            content_type=ContentType.objects.get_for_model(query_set.model),
-            object_pk__in=query_set.values_list('pk', flat=True))
+        unmoderated_objects = ModeratedObject.objects.filter(
+            content_type=ContentType.objects.get_for_model(query_set.model))\
+            .filter(moderation_date__isnull=True).values_list('object_pk',
+                                                               flat=True)
 
-        # TODO: Load this query in chunks to avoid huge RAM usage spikes
-        mobjects = dict(
-            [(mobject.object_pk, mobject) for mobject in mobjs_set])
-
-        full_query_set = super(ModerationObjectsManager, self).get_query_set()\
-            .filter(pk__in=query_set.values_list('pk', flat=True))
-
-        for obj in full_query_set:
-            try:
-                # We cannot use dict.get() here!
-                mobject = mobjects[obj.pk] if obj.pk in mobjects else \
-                    obj.moderated_object
-
-                if mobject.moderation_status == MODERATION_STATUS_PENDING and \
-                   not mobject.moderation_date:
-                    exclude_pks.append(obj.pk)
-            except ObjectDoesNotExist:
-                pass
-
-        return query_set.exclude(pk__in=exclude_pks)
+        return query_set.exclude(pk__in=unmoderated_objects)
 
     def exclude_objs_by_visibility_col(self, query_set):
         from moderation.models import MODERATION_STATUS_REJECTED
